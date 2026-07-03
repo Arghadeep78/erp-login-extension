@@ -2,6 +2,7 @@
 // lookups) and drives the login form in a normal tab of the user's current
 // browser window via content.js — no separate automated browser window.
 const HOST_NAME = "com.erpautologin.helper";
+const DASHBOARD_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/";
 const LOGIN_URL =
   "https://erp.iitkgp.ac.in/SSOAdministration/login.htm?requestedUrl=https://erp.iitkgp.ac.in/IIT_ERP3/";
 
@@ -12,8 +13,19 @@ const pendingNativeCalls = new Map();
 
 function setState(status, message = "") {
   state = { status, message };
-  const badge = { running: "...", success: "OK", error: "ERR" }[status] || "";
+  const badge = { running: "...", error: "ERR" }[status] || "";
   chrome.action.setBadgeText({ text: badge });
+  if (status === "success") {
+    chrome.action.setBadgeText({ text: "OK" });
+    // Revert to idle after 10s so the popup's "Logged in." text and the
+    // toolbar badge don't linger indefinitely.
+    setTimeout(() => {
+      if (state.status === "success") {
+        state = { status: "idle", message: "" };
+        chrome.action.setBadgeText({ text: "" });
+      }
+    }, 10000);
+  }
 }
 
 function getNativePort() {
@@ -44,25 +56,26 @@ function callNative(action, params = {}) {
   });
 }
 
-// Navigate the tab to the login URL and resolve only once THAT navigation
-// has finished loading. Waiting must be armed before issuing the navigation,
-// otherwise chrome.tabs.get can report the previous page as already
-// "complete" and we'd inject into a page about to be replaced.
-function navigateAndWait(tabId) {
+// Navigate the tab to `url` and resolve with the tab's final URL once that
+// navigation has finished loading (following any server-side redirect).
+// Waiting must be armed before issuing the navigation, otherwise
+// chrome.tabs.get can report the previous page as already "complete" and
+// we'd read/inject into a page about to be replaced.
+function navigateAndWait(tabId, url) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error("Login page did not finish loading in time"));
+      reject(new Error("Page did not finish loading in time"));
     }, 30000);
     const listener = (id, info, tab) => {
       if (id === tabId && info.status === "complete" && tab.url && tab.url.startsWith("https://erp.iitkgp.ac.in/")) {
         clearTimeout(timer);
         chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+        resolve(tab.url);
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.update(tabId, { url: LOGIN_URL, active: true });
+    chrome.tabs.update(tabId, { url, active: true });
   });
 }
 
@@ -79,7 +92,19 @@ async function runLogin() {
   // we do NOT hold one long response channel open for the whole (~minute-long)
   // flow, since a service worker would let that channel expire mid-login.
   const tabId = await getOrCreateLoginTab();
-  await navigateAndWait(tabId);
+
+  // Probe the dashboard URL first: a live session stays there, while a logged-
+  // out request gets bounced to the SSO login page by the server. Hitting the
+  // explicit SSOAdministration/login.htm URL directly (as done below when we
+  // do need to log in) always renders the login form regardless of session
+  // state, so it can't be used for this check.
+  const probeUrl = await navigateAndWait(tabId, DASHBOARD_URL);
+  if (!probeUrl.includes("/SSOAdministration/login")) {
+    setState("success", "Already logged in.");
+    return;
+  }
+
+  await navigateAndWait(tabId, LOGIN_URL);
   // Warm the native port up front so a connection failure surfaces immediately
   // rather than only when content.js makes its first call.
   getNativePort();
