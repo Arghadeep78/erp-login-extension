@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8fafc" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="124" height="124" rx="26" fill="url(#bg)" stroke="#e2e8f0" stroke-width="4" />
+  <g transform="translate(64, 64) scale(1.4) translate(-64, -64)">
+    <!-- Login Arrow -->
+    <path d="M 52 40 L 76 64 L 52 88" fill="none" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <line x1="32" y1="64" x2="72" y2="64" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" />
+    
+    <!-- Portal / Door -->
+    <line x1="96" y1="36" x2="96" y2="92" stroke="#0f172a" stroke-width="9" stroke-linecap="round" opacity="0.9"/>
+  </g>
+</svg>

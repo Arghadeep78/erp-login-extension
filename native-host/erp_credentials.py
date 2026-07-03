@@ -23,7 +23,7 @@ IMAP_APP_PASSWORD = os.environ["IMAP_APP_PASSWORD"]
 
 SECURITY_ANSWERS = []
 for i in range(1, 10):
-    match = os.environ.get(f"SECQ_ANSWER_{i}_MATCH")
+    match = os.environ.get(f"SECQ_QUESTION_{i}")
     answer = os.environ.get(f"SECQ_ANSWER_{i}")
     if match and answer:
         SECURITY_ANSWERS.append((match.lower(), answer))
