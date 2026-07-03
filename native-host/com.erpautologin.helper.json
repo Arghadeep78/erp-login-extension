@@ -1,0 +1,9 @@
+{
+  "name": "com.erpautologin.helper",
+  "description": "ERP auto-login native helper",
+  "path": "REPLACED_BY_INSTALL_SCRIPT_PATH",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACED_BY_INSTALL_SCRIPT_EXTID/"
+  ]
+}
