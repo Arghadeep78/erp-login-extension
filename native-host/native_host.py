@@ -9,8 +9,11 @@ this host for two things:
   {"action": "answer_security_question", "question": "<question text>"}
       -> {"status": "success", "answer": ...}
 
-  {"action": "fetch_otp", "after_ts": <unix ts>}
-      -> {"status": "success", "otp": "123456"}   (once the mail arrives)
+  {"action": "mark_otp_watermark"}
+      -> {"status": "success", "min_uid": <int>}   (call right before requesting the OTP)
+
+  {"action": "fetch_otp", "min_uid": <int>}
+      -> {"status": "success", "otp": "123456"}   (once a mail with UID > min_uid arrives)
       -> {"status": "pending"}                     (not yet — extension retries)
 
 Framed per Chrome's native messaging protocol (4-byte little-endian length
@@ -22,7 +25,7 @@ import struct
 import sys
 import traceback
 
-from erp_credentials import ERP_PASSWORD, ERP_USER_ID, answer_for_question, fetch_otp
+from erp_credentials import ERP_PASSWORD, ERP_USER_ID, answer_for_question, fetch_otp, get_max_uid
 
 
 def read_message():
@@ -47,11 +50,13 @@ def handle(request: dict) -> dict:
     if action == "answer_security_question":
         answer = answer_for_question(request.get("question", ""))
         return {"status": "success", "answer": answer}
+    if action == "mark_otp_watermark":
+        return {"status": "success", "min_uid": get_max_uid()}
     if action == "fetch_otp":
         # Bounded poll so each native round-trip stays short (keeps the
         # extension's service worker alive); the extension retries on "pending".
         try:
-            otp = fetch_otp(after_ts=request.get("after_ts", 0), timeout=10)
+            otp = fetch_otp(min_uid=request.get("min_uid", 0), timeout=10)
         except TimeoutError:
             return {"status": "pending"}
         return {"status": "success", "otp": otp}

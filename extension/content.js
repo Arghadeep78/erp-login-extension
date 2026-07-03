@@ -67,12 +67,12 @@ function report(status, message = "") {
   chrome.runtime.sendMessage({ cmd: "report_status", status, message });
 }
 
-async function fetchOtp(afterTs) {
+async function fetchOtp(minUid) {
   // Poll: each native call blocks at most ~10s, then we retry until the
   // mail arrives or we give up. Keeps every message channel short-lived.
   const deadline = Date.now() + 120000;
   while (Date.now() < deadline) {
-    const resp = await nativeCall("fetch_otp", { after_ts: afterTs });
+    const resp = await nativeCall("fetch_otp", { min_uid: minUid });
     if (resp.status === "success") return resp.otp;
     if (resp.status === "error") throw new Error(resp.message || "OTP fetch failed");
     // status === "pending": loop and try again
@@ -118,7 +118,15 @@ async function run() {
   answerEl.dispatchEvent(new Event("blur", { bubbles: true }));
   answerEl.blur();
 
-  const otpTriggerTs = Date.now() / 1000;
+  // Watermark the inbox right before requesting the OTP so fetchOtp only ever
+  // considers mail that arrives after this point — a UID comparison, not a
+  // timestamp one, so it can't be fooled by clock skew or accept a stale OTP
+  // left over from an earlier attempt.
+  const watermark = await nativeCall("mark_otp_watermark");
+  if (!watermark || watermark.status !== "success") {
+    throw new Error((watermark && watermark.message) || "Failed to watermark inbox before OTP request");
+  }
+
   const getOtpBtn = await waitFor(() => document.querySelector("#getotp"));
   getOtpBtn.click();
 
@@ -127,7 +135,7 @@ async function run() {
     return el && el.offsetParent !== null ? el : null;
   }, 20000);
 
-  const otp = await fetchOtp(otpTriggerTs);
+  const otp = await fetchOtp(watermark.min_uid);
 
   const otpEl = await waitFor(() => document.querySelector("#email_otp1"));
   setValue(otpEl, otp);
