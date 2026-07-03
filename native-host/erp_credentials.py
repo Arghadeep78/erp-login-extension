@@ -37,9 +37,9 @@ _imap_conn = None
 
 
 def answer_for_question(question_text: str) -> str:
-    q = question_text.lower()
+    q = question_text.strip().lower()
     for match, answer in SECURITY_ANSWERS:
-        if match in q:
+        if match == q:
             return answer
     raise RuntimeError(f"No stored answer matches security question: {question_text!r}")
 
