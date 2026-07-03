@@ -29,9 +29,17 @@ e.g. `~/erp-auto-login`.
 
 **2. Install the Python dependencies** (used by the native host):
 
+macOS/Linux:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Windows (PowerShell):
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -61,12 +69,22 @@ Edit `.env` (quote values with spaces/special characters, e.g. `"@123456"`):
 
 **5. Register the native messaging host**, passing the extension ID from step 4:
 
+macOS/Linux:
 ```bash
 ./native-host/install.sh <extension-id>
 ```
 
 This registers `native-host/run_native_host.sh` with Chrome/Brave so the
 extension is allowed to launch it.
+
+Windows (PowerShell):
+```powershell
+.\native-host\install.ps1 <extension-id>
+```
+
+This writes a filled-in copy of the host manifest and registers it under
+`HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.erpautologin.helper`
+(and the Brave equivalent), pointing at `native-host\run_native_host.bat`.
 
 ## Use it
 

@@ -33,7 +33,7 @@ case "$(uname)" in
     )
     ;;
   *)
-    echo "Unsupported OS. On Windows, register the host in the registry manually — see README." >&2
+    echo "Unsupported OS. On Windows, run native-host\\install.ps1 instead — see README." >&2
     exit 1
     ;;
 esac
