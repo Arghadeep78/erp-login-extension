@@ -2,161 +2,54 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <style>
-      :root {
-        color-scheme: light;
-        --accent: #0ea5e9;
-        --accent-hover: #0284c7;
-        --bg: #ffffff;
-        --fg: #1a1a1a;
-        --muted: #6b7280;
-        --border: #e5e7eb;
-        --surface: #f9fafb;
-        --success: #16a34a;
-        --error: #dc2626;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        width: 260px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: var(--bg);
-        color: var(--fg);
-      }
-
-      .header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 14px 16px 10px;
-      }
-
-      .header img {
-        width: 20px;
-        height: 20px;
-        border-radius: 4px;
-      }
-
-      .header h1 {
-        font-size: 13px;
-        font-weight: 600;
-        margin: 0;
-        letter-spacing: 0.01em;
-      }
-
-      .body {
-        padding: 4px 16px 16px;
-      }
-
-      button {
-        width: 100%;
-        padding: 10px 14px;
-        font-size: 14px;
-        font-weight: 600;
-        font-family: inherit;
-        color: #fff;
-        background: var(--accent);
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.15s ease, transform 0.05s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-      }
-
-      button:hover:not(:disabled) {
-        background: var(--accent-hover);
-      }
-
-      button:active:not(:disabled) {
-        transform: scale(0.98);
-      }
-
-      button:disabled {
-        background: var(--accent);
-        opacity: 0.6;
-        cursor: default;
-      }
-
-      .spinner {
-        width: 13px;
-        height: 13px;
-        border: 2px solid rgba(255, 255, 255, 0.4);
-        border-top-color: #fff;
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-        display: none;
-        flex: none;
-      }
-
-      button.running .spinner {
-        display: inline-block;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      #status {
-        margin-top: 10px;
-        font-size: 12px;
-        line-height: 1.4;
-        color: var(--muted);
-        min-height: 16px;
-        white-space: pre-wrap;
-        display: flex;
-        align-items: flex-start;
-        gap: 6px;
-      }
-
-      #status.success {
-        color: var(--success);
-      }
-
-      #status.error {
-        color: var(--error);
-      }
-
-      #status .dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        margin-top: 4px;
-        flex: none;
-        background: currentColor;
-        display: none;
-      }
-
-      #status.success .dot,
-      #status.error .dot {
-        display: block;
-      }
-    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <div class="header">
-      <img src="icon.svg" alt="" />
-      <h1>IIT KGP ERP Login</h1>
+      <img class="logo" src="icon.svg" alt="" />
+      <div class="title">
+        <h1>IIT KGP ERP Login</h1>
+        <span class="subtitle">One-click sign in</span>
+      </div>
     </div>
+
     <div class="body">
-      <button id="login-btn" data-target="erp">
-        <span class="spinner"></span>
-        <span class="label">Log in to Academic</span>
-      </button>
-      <button id="cdc-btn" data-target="cdc" style="margin-top: 8px;">
-        <span class="spinner"></span>
-        <span class="label">Log in to CDC</span>
-      </button>
-      <div id="status"><span class="dot"></span><span class="text"></span></div>
+      <div class="section-label">Choose portal</div>
+
+      <div class="options">
+        <button id="login-btn" class="primary" data-target="erp">
+          <span class="spinner" aria-hidden="true"></span>
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+            <path d="M6 12v5c3 3 9 3 12 0v-5" />
+          </svg>
+          <span class="label">Academic</span>
+        </button>
+
+        <button id="cdc-btn" class="secondary" data-target="cdc">
+          <span class="spinner" aria-hidden="true"></span>
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="14" x="2" y="7" rx="2" ry="2" />
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+          </svg>
+          <span class="label">CDC</span>
+        </button>
+      </div>
+
+      <div id="status" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="text">Ready to sign in.</span>
+      </div>
     </div>
+
+    <div class="footer">Secure · Local only · v1.0</div>
+
     <script src="popup.js"></script>
   </body>
 </html>

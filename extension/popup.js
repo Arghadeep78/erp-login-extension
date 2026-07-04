@@ -5,11 +5,6 @@ const buttons = Array.from(document.querySelectorAll("button[data-target]"));
 const status = document.getElementById("status");
 const statusText = status.querySelector(".text");
 
-// Which target the in-flight login is for, so only that button spins. Persisted
-// across popup reopens via session storage — the background service worker only
-// tracks status, not which button started it.
-let activeTarget = null;
-
 // The browser window this popup was opened from. Passed along with the login
 // command so background.js opens the ERP tab in *this* window rather than
 // guessing (Brave otherwise sometimes spawns a stray mini window). We anchor on
@@ -21,20 +16,23 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 });
 
 function baseLabel(btn) {
-  return btn.dataset.target === "cdc" ? "Log in to CDC" : "Log in to Academic";
+  return btn.dataset.target === "cdc" ? "CDC" : "Academic";
 }
 
 function render(state) {
   const running = state.status === "running";
-  // Once no login is running, forget the active target so the next click can
-  // claim its own button (see the click handler's activeTarget === null guard).
-  if (!running) activeTarget = null;
+  // The background reports which target the in-flight login is for, so only
+  // that button spins. No local guessing — this stays correct across popup
+  // reopens and back-to-back clicks on different buttons.
   for (const btn of buttons) {
-    const isActive = running && btn.dataset.target === activeTarget;
+    const isActive = running && btn.dataset.target === state.target;
     // While a login runs, disable both buttons; only the active one spins.
     btn.disabled = running;
     btn.classList.toggle("running", isActive);
-    btn.querySelector(".label").textContent = isActive ? "Logging in..." : baseLabel(btn);
+    // Keep the short name (Academic/CDC) even while running — the spinner
+    // already signals progress, and a longer label would break the side-by-side
+    // row. "You can close this popup." in the status line explains the wait.
+    btn.querySelector(".label").textContent = baseLabel(btn);
   }
 
   status.classList.remove("success", "error");
@@ -61,22 +59,11 @@ function refresh(cmd, target, onState) {
 
 for (const btn of buttons) {
   btn.addEventListener("click", () => {
-    // The background ignores a login click while one is already running. Only
-    // claim this button as active if it wasn't already running before we asked
-    // — otherwise we'd spin the wrong button over the actually-running login.
-    refresh("login", btn.dataset.target, (state) => {
-      if (state.status === "running" && activeTarget === null) {
-        activeTarget = btn.dataset.target;
-        chrome.storage.session.set({ activeTarget });
-      }
-    });
+    // The background ignores a login click while one is already running, and
+    // reports back which target is actually active — render() spins that button.
+    refresh("login", btn.dataset.target);
   });
 }
 
-// Restore which button is active (if a login is still running from before the
-// popup was reopened) before the first status render.
-chrome.storage.session.get("activeTarget", (data) => {
-  activeTarget = data.activeTarget || null;
-  refresh("status");
-});
+refresh("status");
 setInterval(() => refresh("status"), 1000);

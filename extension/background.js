@@ -24,7 +24,7 @@ const CDC_PLACEMENT_MENU = {
   display_name: "Application of Placement/Internship",
 };
 
-let state = { status: "idle", message: "" };
+let state = { status: "idle", message: "", target: null };
 // While a login is in flight, holds the waitForLoggedIn reject handle so a
 // content.js error report can abort the wait. Cleared once login settles.
 let pendingNav = null; // { tabId, reject } | null
@@ -32,8 +32,8 @@ let nativePort = null;
 let nextRequestId = 1;
 const pendingNativeCalls = new Map();
 
-function setState(status, message = "") {
-  state = { status, message };
+function setState(status, message = "", target = state.target) {
+  state = { status, message, target };
   const badge = { running: "...", error: "ERR" }[status] || "";
   chrome.action.setBadgeText({ text: badge });
   if (status === "success") {
@@ -294,8 +294,9 @@ async function runLogin(target = "erp", preferredWindowId) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.cmd === "login") {
     if (state.status !== "running") {
-      setState("running");
-      runLogin(msg.target || "erp", msg.windowId).catch((err) => setState("error", err.message));
+      const target = msg.target || "erp";
+      setState("running", "", target);
+      runLogin(target, msg.windowId).catch((err) => setState("error", err.message));
     }
     sendResponse(state);
     return;
