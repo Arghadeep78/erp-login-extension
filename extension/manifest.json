@@ -3,7 +3,7 @@
   "name": "IIT KGP ERP Auto-Login",
   "version": "1.0",
   "description": "One-click login to IIT KGP ERP via a local native helper.",
-  "permissions": ["nativeMessaging", "tabs", "scripting"],
+  "permissions": ["nativeMessaging", "tabs", "scripting", "storage"],
   "host_permissions": ["https://erp.iitkgp.ac.in/*"],
   "background": {
     "service_worker": "background.js"

@@ -142,12 +142,18 @@ async function run() {
 
   const submitBtn = await waitFor(() => document.querySelector("#loginFormSubmitButton"));
   submitBtn.click();
+  // Do NOT report success here. Clicking submit POSTs the login and navigates
+  // the tab, tearing down this content script mid-flight — reporting now is
+  // premature and lets the background start its post-login navigation while
+  // the tab is still on the SSO login domain (see run()'s caller). Success is
+  // instead detected in background.js when the tab lands on /IIT_ERP3/.
 }
 
 // Guard against double-injection: only the first injection runs the flow.
 if (!window.__erpAutoLoginStarted) {
   window.__erpAutoLoginStarted = true;
-  run()
-    .then(() => report("success"))
-    .catch((err) => report("error", err.message));
+  // run() intentionally does not report success on resolve — the submit
+  // navigation confirms login, and background.js watches for the tab landing
+  // on /IIT_ERP3/ to settle success. We only report failures here.
+  run().catch((err) => report("error", err.message));
 }

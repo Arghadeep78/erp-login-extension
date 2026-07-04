@@ -5,8 +5,29 @@ const HOST_NAME = "com.erpautologin.helper";
 const DASHBOARD_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/";
 const LOGIN_URL =
   "https://erp.iitkgp.ac.in/SSOAdministration/login.htm?requestedUrl=https://erp.iitkgp.ac.in/IIT_ERP3/";
+// Academic module landing page (module_id=16), opened after a successful login
+// via the default "Log in to ERP" button instead of the plain home page.
+const ACADEMIC_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/menulist.htm?module_id=16";
+// CDC module landing page (module_id=26), opened after a successful login when
+// the user picks "Log in to CDC".
+const CDC_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/menulist.htm?module_id=26";
+// The CDC > Student > "Application of Placement/Internship" menu item. On the
+// CDC page this link calls showMenu(...) which (for an active, non-delegated
+// menu) POSTs these exact fields to showmenu.htm. We submit that form directly
+// instead of waiting for the async-rendered accordion and clicking it.
+const CDC_PLACEMENT_MENU = {
+  module_id: "26",
+  menu_id: "11",
+  link: "https://erp.iitkgp.ac.in/TrainingPlacementSSO/TPStudent.jsp",
+  module_name: "CDC",
+  parent_display_name: "Student",
+  display_name: "Application of Placement/Internship",
+};
 
 let state = { status: "idle", message: "" };
+// While a login is in flight, holds the waitForLoggedIn reject handle so a
+// content.js error report can abort the wait. Cleared once login settles.
+let pendingNav = null; // { tabId, reject } | null
 let nativePort = null;
 let nextRequestId = 1;
 const pendingNativeCalls = new Map();
@@ -61,6 +82,8 @@ function callNative(action, params = {}) {
 // Waiting must be armed before issuing the navigation, otherwise
 // chrome.tabs.get can report the previous page as already "complete" and
 // we'd read/inject into a page about to be replaced.
+// If `url` is omitted, no navigation is issued — the caller triggers it another
+// way (e.g. an injected form submit) and we just wait for the next load.
 function navigateAndWait(tabId, url) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -75,7 +98,93 @@ function navigateAndWait(tabId, url) {
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.update(tabId, { url, active: true });
+    if (url) chrome.tabs.update(tabId, { url, active: true });
+  });
+}
+
+// After landing on the CDC menu page, submit the showmenu.htm form for the
+// Placement/Internship menu in the page's MAIN world, then wait for the
+// resulting navigation to finish. Mirrors what the page's own showMenu ->
+// forwardToShowmenu does on click, so it doesn't depend on the async accordion.
+async function openCdcPlacementMenu(tabId) {
+  // Arm the load wait BEFORE submitting so we don't miss the navigation.
+  const done = navigateAndWait(tabId);
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: (fields) => {
+      const f = document.createElement("form");
+      f.method = "post";
+      // Absolute action: a relative "showmenu.htm" resolves against whatever
+      // path the tab is on, which 404s if we're not under /IIT_ERP3/.
+      f.action = "https://erp.iitkgp.ac.in/IIT_ERP3/showmenu.htm";
+      for (const [name, value] of Object.entries(fields)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        f.appendChild(input);
+      }
+      document.body.appendChild(f);
+      f.submit();
+    },
+    args: [CDC_PLACEMENT_MENU],
+  });
+  await done;
+}
+
+// Once logged in, take the tab to the target's landing destination:
+//   "erp" -> Academic module page (instead of the plain home page)
+//   "cdc" -> CDC module page, then the Placement/Internship menu
+async function goToLandingPage(tabId, target) {
+  if (target === "cdc") {
+    await navigateAndWait(tabId, CDC_URL);
+    await openCdcPlacementMenu(tabId);
+  } else {
+    await navigateAndWait(tabId, ACADEMIC_URL);
+  }
+}
+
+// Resolve once the tab lands on the post-login dashboard (/IIT_ERP3/, off the
+// SSO login domain), i.e. the login POST content.js submitted has succeeded.
+// Rejects if content.js reports an error first (via pendingNav.reject) or the
+// login doesn't complete within the timeout. This is how we know login is done
+// WITHOUT racing the in-flight submit — we never navigate the tab until the
+// server has taken it to the dashboard on its own.
+function waitForLoggedIn(tabId, timeoutMs = 180000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      pendingNav = null;
+      reject(new Error("Login did not complete within timeout"));
+    }, timeoutMs);
+    const listener = (updatedTabId, info, tab) => {
+      if (updatedTabId !== tabId || info.status !== "complete") return;
+      // Match on the path, not the whole href: the login URL carries
+      // "IIT_ERP3" in its requestedUrl query param, so a substring test would
+      // false-positive on the login page itself.
+      let path = "";
+      try {
+        path = new URL(tab.url || "").pathname;
+      } catch {
+        return;
+      }
+      if (path.startsWith("/IIT_ERP3/")) {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    // Let a content.js error abort the wait.
+    pendingNav = {
+      tabId,
+      reject: (err) => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timer);
+        reject(err);
+      },
+    };
+    chrome.tabs.onUpdated.addListener(listener);
   });
 }
 
@@ -86,7 +195,7 @@ async function getOrCreateLoginTab() {
   return tab.id;
 }
 
-async function runLogin() {
+async function runLogin(target = "erp") {
   // Open/focus the ERP login tab, navigate it, then inject content.js. The
   // content script self-runs and reports back via a "report_status" message —
   // we do NOT hold one long response channel open for the whole (~minute-long)
@@ -102,6 +211,8 @@ async function runLogin() {
   // that must also be treated as logged-out rather than "already logged in".
   const probeUrl = await navigateAndWait(tabId, DASHBOARD_URL);
   if (!probeUrl.includes("/SSOAdministration/login") && !probeUrl.includes("/SSOAdministration/logoutmsg")) {
+    // Already logged in: go straight to the target's landing page.
+    await goToLandingPage(tabId, target);
     setState("success", "Already logged in.");
     return;
   }
@@ -123,21 +234,38 @@ async function runLogin() {
     },
   });
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+
+  // content.js fills the form and clicks submit, but does NOT report success —
+  // its submit navigates the tab and tears the script down. We instead wait for
+  // the server to land the tab on the dashboard, which confirms login is truly
+  // complete, and only THEN drive the post-login navigation. This ordering is
+  // what fixes the races: navigating for the landing page / CDC menu while the
+  // login POST was still in flight caused the showmenu.htm 404 (relative action
+  // resolved against /SSOAdministration/) and aborted OTP entry.
+  await waitForLoggedIn(tabId);
+  await goToLandingPage(tabId, target);
+  setState("success", "");
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.cmd === "login") {
     if (state.status !== "running") {
       setState("running");
-      runLogin().catch((err) => setState("error", err.message));
+      runLogin(msg.target || "erp").catch((err) => setState("error", err.message));
     }
     sendResponse(state);
     return;
   }
 
   if (msg.cmd === "report_status") {
-    // Final outcome reported by content.js.
-    setState(msg.status, msg.message || "");
+    // content.js only reports failures now (success is detected by
+    // waitForLoggedIn watching the tab reach the dashboard). Abort the
+    // in-flight login wait, if any, and settle the error.
+    if (msg.status !== "success") {
+      if (pendingNav && pendingNav.reject) pendingNav.reject(new Error(msg.message || "Login failed"));
+      pendingNav = null;
+      setState(msg.status, msg.message || "");
+    }
     sendResponse({ ok: true });
     return;
   }
