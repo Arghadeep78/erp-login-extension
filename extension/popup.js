@@ -10,6 +10,16 @@ const statusText = status.querySelector(".text");
 // tracks status, not which button started it.
 let activeTarget = null;
 
+// The browser window this popup was opened from. Passed along with the login
+// command so background.js opens the ERP tab in *this* window rather than
+// guessing (Brave otherwise sometimes spawns a stray mini window). We anchor on
+// the active tab's windowId — chrome.windows.getCurrent() can instead return
+// the popup's own popup-type window, which is what caused the stray window.
+let popupWindowId = null;
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  if (!chrome.runtime.lastError && tabs && tabs[0]) popupWindowId = tabs[0].windowId;
+});
+
 function baseLabel(btn) {
   return btn.dataset.target === "cdc" ? "Log in to CDC" : "Log in to Academic";
 }
@@ -41,6 +51,7 @@ function render(state) {
 function refresh(cmd, target, onState) {
   const message = { cmd };
   if (target) message.target = target;
+  if (cmd === "login" && popupWindowId != null) message.windowId = popupWindowId;
   chrome.runtime.sendMessage(message, (state) => {
     if (chrome.runtime.lastError) return;
     if (onState) onState(state);

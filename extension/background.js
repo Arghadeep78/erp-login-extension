@@ -188,19 +188,63 @@ function waitForLoggedIn(tabId, timeoutMs = 180000) {
   });
 }
 
-async function getOrCreateLoginTab() {
+async function getOrCreateLoginTab(preferredWindowId) {
   const [existing] = await chrome.tabs.query({ url: "https://erp.iitkgp.ac.in/*" });
-  if (existing) return existing.id;
-  const tab = await chrome.tabs.create({ url: "about:blank" });
+  if (existing) {
+    // Focus the window that already hosts the ERP tab so it doesn't stay
+    // buried behind others.
+    if (existing.windowId != null) {
+      await chrome.windows.update(existing.windowId, { focused: true });
+    }
+    return existing.id;
+  }
+  // Create the tab in the window the popup was opened from, so it lands in the
+  // window the user is actually looking at (Brave otherwise sometimes spawns or
+  // targets a stray window). Fall back to the last-focused normal window if the
+  // caller didn't supply one (or it's since been closed).
+  let windowId = preferredWindowId;
+  if (windowId != null) {
+    try {
+      // Verify it still exists AND is a normal browser window — never target a
+      // popup/app-type window, which is what produced the stray mini window.
+      const win = await chrome.windows.get(windowId);
+      if (win.type !== "normal") windowId = undefined;
+    } catch (_) {
+      windowId = undefined;
+    }
+  }
+  if (windowId == null) {
+    // No usable window from the caller — pick the most recently focused normal
+    // browser window ourselves rather than letting tabs.create default (which
+    // could still land in a popup-type window).
+    try {
+      const lastFocused = await chrome.windows.getLastFocused();
+      if (lastFocused.type === "normal") {
+        windowId = lastFocused.id;
+      } else {
+        const normals = (await chrome.windows.getAll({ windowTypes: ["normal"] }))
+          .filter((w) => w.type === "normal");
+        windowId = (normals[0] || {}).id;
+      }
+    } catch (_) {
+      windowId = undefined;
+    }
+  }
+  if (windowId == null) {
+    // Genuinely no normal window open: create one explicitly.
+    const win = await chrome.windows.create({ url: "about:blank" });
+    return win.tabs[0].id;
+  }
+  const tab = await chrome.tabs.create({ url: "about:blank", windowId });
   return tab.id;
 }
 
-async function runLogin(target = "erp") {
+async function runLogin(target = "erp", preferredWindowId) {
   // Open/focus the ERP login tab, navigate it, then inject content.js. The
   // content script self-runs and reports back via a "report_status" message —
   // we do NOT hold one long response channel open for the whole (~minute-long)
   // flow, since a service worker would let that channel expire mid-login.
-  const tabId = await getOrCreateLoginTab();
+  const tabId = await getOrCreateLoginTab(preferredWindowId);
 
   // Probe the dashboard URL first: a live session stays there, while a logged-
   // out request gets bounced to the SSO login page by the server. Hitting the
@@ -251,7 +295,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.cmd === "login") {
     if (state.status !== "running") {
       setState("running");
-      runLogin(msg.target || "erp").catch((err) => setState("error", err.message));
+      runLogin(msg.target || "erp", msg.windowId).catch((err) => setState("error", err.message));
     }
     sendResponse(state);
     return;
