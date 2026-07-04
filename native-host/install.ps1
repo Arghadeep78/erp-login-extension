@@ -28,7 +28,10 @@ $content = (Get-Content $ManifestSrc -Raw) `
 # whose default value points at the manifest file (no fixed folder like mac/Linux).
 $RegPaths = @(
     "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName",
-    "HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName"
+    "HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\$HostName",
+    "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$HostName",
+    "HKCU:\Software\Opera Software\NativeMessagingHosts\$HostName",
+    "HKCU:\Software\Vivaldi\NativeMessagingHosts\$HostName"
 )
 
 foreach ($RegPath in $RegPaths) {

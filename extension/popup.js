@@ -5,6 +5,11 @@ const buttons = Array.from(document.querySelectorAll("button[data-target]"));
 const status = document.getElementById("status");
 const statusText = status.querySelector(".text");
 
+// Show the version straight from the manifest so the footer never drifts out
+// of sync with manifest.json on a version bump.
+const footer = document.getElementById("footer");
+if (footer) footer.textContent = `Secure · Local only · v${chrome.runtime.getManifest().version}`;
+
 // The browser window this popup was opened from. Passed along with the login
 // command so background.js opens the ERP tab in *this* window rather than
 // guessing (Brave otherwise sometimes spawns a stray mini window). We anchor on

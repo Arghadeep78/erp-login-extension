@@ -24,12 +24,18 @@ case "$(uname)" in
     TARGET_DIRS=(
       "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
       "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+      "$HOME/Library/Application Support/Microsoft Edge/NativeMessagingHosts"
+      "$HOME/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts"
+      "$HOME/Library/Application Support/Vivaldi/NativeMessagingHosts"
     )
     ;;
   Linux)
     TARGET_DIRS=(
       "$HOME/.config/google-chrome/NativeMessagingHosts"
       "$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+      "$HOME/.config/microsoft-edge/NativeMessagingHosts"
+      "$HOME/.config/opera/NativeMessagingHosts"
+      "$HOME/.config/vivaldi/NativeMessagingHosts"
     )
     ;;
   *)

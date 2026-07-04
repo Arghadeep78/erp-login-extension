@@ -9,6 +9,10 @@ A browser extension for one-click login to the IIT Kharagpur ERP system. It auto
 
 *Note: All secrets remain strictly local in your `.env` file.*
 
+## Supported browsers
+
+Any Chromium-based browser works. The native-host installer registers the helper for **Chrome, Brave, Edge, Opera, and Vivaldi** automatically. Since each browser assigns the unpacked extension a different Extension ID, run the register step (Setup step 5) once per browser, passing that browser's own Extension ID.
+
 ## Setup
 
 **1. Clone carefully:** Do not place this project in `~/Desktop`, `~/Documents`, or `~/Downloads` on macOS, as it blocks execution. *(Windows users can clone it anywhere).*
@@ -43,7 +47,7 @@ Edit `.env` with your ERP login, security questions, and an IMAP App Password.
 *(Note: Use quotes `""` for values with spaces/special characters. For Gmail, 2FA must be enabled to generate an [App Password](https://myaccount.google.com/apppasswords)).*
 
 **4. Load extension:**
-1. Open `chrome://extensions` (or `brave://extensions`).
+1. Open your browser's extensions page (e.g. `chrome://extensions`, `brave://extensions`, `edge://extensions`).
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select the `extension/` folder.
 4. Copy the generated **Extension ID**.
