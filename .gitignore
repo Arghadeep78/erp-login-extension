@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .venv/
 native-host/*.json.installed
+.DS_Store

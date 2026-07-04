@@ -97,9 +97,11 @@ async function runLogin() {
   // out request gets bounced to the SSO login page by the server. Hitting the
   // explicit SSOAdministration/login.htm URL directly (as done below when we
   // do need to log in) always renders the login form regardless of session
-  // state, so it can't be used for this check.
+  // state, so it can't be used for this check. An idle/expired session is
+  // instead bounced to logoutmsg.htm (a notice page, not the login form), so
+  // that must also be treated as logged-out rather than "already logged in".
   const probeUrl = await navigateAndWait(tabId, DASHBOARD_URL);
-  if (!probeUrl.includes("/SSOAdministration/login")) {
+  if (!probeUrl.includes("/SSOAdministration/login") && !probeUrl.includes("/SSOAdministration/logoutmsg")) {
     setState("success", "Already logged in.");
     return;
   }
