@@ -10,15 +10,17 @@ const statusText = status.querySelector(".text");
 const footer = document.getElementById("footer");
 if (footer) footer.textContent = `Secure · Local only · v${chrome.runtime.getManifest().version}`;
 
-// The browser window this popup was opened from. Passed along with the login
-// command so background.js opens the ERP tab in *this* window rather than
-// guessing (Brave otherwise sometimes spawns a stray mini window). We anchor on
-// the active tab's windowId — chrome.windows.getCurrent() can instead return
-// the popup's own popup-type window, which is what caused the stray window.
-let popupWindowId = null;
-chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  if (!chrome.runtime.lastError && tabs && tabs[0]) popupWindowId = tabs[0].windowId;
-});
+// The window the extension was clicked from, so background.js opens the ERP tab
+// there. Use `lastFocusedWindow` (the normal browser window), NOT `currentWindow`
+// — from a popup the latter can resolve to the popup's own window.
+function getClickedWindowId() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError || !tabs || !tabs[0]) return resolve(null);
+      resolve(tabs[0].windowId);
+    });
+  });
+}
 
 function baseLabel(btn) {
   return btn.dataset.target === "cdc" ? "CDC" : "Academic";
@@ -42,33 +44,39 @@ function render(state) {
 
   status.classList.remove("success", "error");
   statusText.textContent = {
-    idle: "",
+    idle: "Ready to sign in.",
     running: "You can close this popup.",
-    success: "Logged in.",
-    error: "Failed: " + state.message,
+    // Surface the background's success message (e.g. "Already logged in.") so we
+    // don't discard the distinction; fall back to a generic confirmation.
+    success: state.message || "Logged in.",
+    error: "Failed: " + (state.message || "something went wrong"),
   }[state.status];
   if (state.status === "success") status.classList.add("success");
   if (state.status === "error") status.classList.add("error");
 }
 
-function refresh(cmd, target, onState) {
-  const message = { cmd };
-  if (target) message.target = target;
-  if (cmd === "login" && popupWindowId != null) message.windowId = popupWindowId;
-  chrome.runtime.sendMessage(message, (state) => {
+// Poll the background for the current login state and reflect it in the UI.
+function pollStatus() {
+  chrome.runtime.sendMessage({ cmd: "status" }, (state) => {
     if (chrome.runtime.lastError) return;
-    if (onState) onState(state);
     render(state);
   });
 }
 
 for (const btn of buttons) {
-  btn.addEventListener("click", () => {
-    // The background ignores a login click while one is already running, and
-    // reports back which target is actually active — render() spins that button.
-    refresh("login", btn.dataset.target);
+  btn.addEventListener("click", async () => {
+    // Send the clicked window's id so background.js opens the ERP tab there. The
+    // background ignores a login click while one is already running, and reports
+    // back which target is active — render() spins that button.
+    const windowId = await getClickedWindowId();
+    const message = { cmd: "login", target: btn.dataset.target };
+    if (windowId != null) message.windowId = windowId;
+    chrome.runtime.sendMessage(message, (state) => {
+      if (chrome.runtime.lastError) return;
+      render(state);
+    });
   });
 }
 
-refresh("status");
-setInterval(() => refresh("status"), 1000);
+pollStatus();
+setInterval(pollStatus, 1000);

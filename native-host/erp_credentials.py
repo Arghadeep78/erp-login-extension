@@ -28,11 +28,8 @@ for i in range(1, 10):
     if match and answer:
         SECURITY_ANSWERS.append((match.lower(), answer))
 
-# Reused across calls (both within one fetch_otp poll loop and across the
-# extension's separate fetch_otp native calls, since this process stays alive
-# for the whole login) so we don't open a fresh TLS connection + login every
-# few seconds — Gmail throttles/flags accounts for rapid repeated app-password
-# logins from the same IP.
+# Reused across calls so we don't open a fresh TLS connection + login every few
+# seconds — Gmail throttles/flags accounts for rapid repeated app-password logins.
 _imap_conn = None
 
 
@@ -98,9 +95,8 @@ def fetch_otp(min_uid: int, timeout: int = 90) -> str:
                 if ("otp" in text.lower() or "one time password" in text.lower()) and match:
                     return match.group(1)
         except (imaplib.IMAP4.error, OSError):
-            # Transient blip (dropped connection, network hiccup) mid-poll — drop the
-            # cached connection so the next iteration reconnects, and keep polling
-            # rather than letting this escape and abort the whole fetch_otp call.
+            # Transient blip mid-poll — drop the cached connection so the next
+            # iteration reconnects, and keep polling instead of aborting.
             _imap_conn = None
         time.sleep(1)
     raise TimeoutError("OTP email not received within timeout")

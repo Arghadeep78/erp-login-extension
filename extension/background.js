@@ -5,16 +5,13 @@ const HOST_NAME = "com.erpautologin.helper";
 const DASHBOARD_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/";
 const LOGIN_URL =
   "https://erp.iitkgp.ac.in/SSOAdministration/login.htm?requestedUrl=https://erp.iitkgp.ac.in/IIT_ERP3/";
-// Academic module landing page (module_id=16), opened after a successful login
-// via the default "Log in to ERP" button instead of the plain home page.
+// Post-login landing pages: Academic (module 16) for the default button, CDC
+// (module 26) for the CDC button.
 const ACADEMIC_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/menulist.htm?module_id=16";
-// CDC module landing page (module_id=26), opened after a successful login when
-// the user picks "Log in to CDC".
 const CDC_URL = "https://erp.iitkgp.ac.in/IIT_ERP3/menulist.htm?module_id=26";
-// The CDC > Student > "Application of Placement/Internship" menu item. On the
-// CDC page this link calls showMenu(...) which (for an active, non-delegated
-// menu) POSTs these exact fields to showmenu.htm. We submit that form directly
-// instead of waiting for the async-rendered accordion and clicking it.
+// The CDC > Student > "Application of Placement/Internship" menu item. The
+// page's showMenu(...) POSTs these exact fields to showmenu.htm; we POST them
+// directly (see openCdcPlacementMenu) rather than waiting on the async accordion.
 const CDC_PLACEMENT_MENU = {
   module_id: "26",
   menu_id: "11",
@@ -25,6 +22,9 @@ const CDC_PLACEMENT_MENU = {
 };
 
 let state = { status: "idle", message: "", target: null };
+// The tab the current login is running in, or null when idle. Used to detect
+// the user closing that tab/window mid-login (see chrome.tabs.onRemoved below).
+let activeLoginTabId = null;
 // While a login is in flight, holds the waitForLoggedIn reject handle so a
 // content.js error report can abort the wait. Cleared once login settles.
 let pendingNav = null; // { tabId, reject } | null
@@ -34,10 +34,11 @@ const pendingNativeCalls = new Map();
 
 function setState(status, message = "", target = state.target) {
   state = { status, message, target };
-  const badge = { running: "...", error: "ERR" }[status] || "";
-  chrome.action.setBadgeText({ text: badge });
+  // Keep tracking the login tab through "success" too (so closing it still
+  // clears the "OK" badge); only drop the reference once we're fully idle/errored.
+  if (status === "idle" || status === "error") activeLoginTabId = null;
+  chrome.action.setBadgeText({ text: { running: "...", success: "OK", error: "ERR" }[status] || "" });
   if (status === "success") {
-    chrome.action.setBadgeText({ text: "OK" });
     // Revert to idle after 10s so the popup's "Logged in." text and the
     // toolbar badge don't linger indefinitely.
     setTimeout(() => {
@@ -77,13 +78,11 @@ function callNative(action, params = {}) {
   });
 }
 
-// Navigate the tab to `url` and resolve with the tab's final URL once that
-// navigation has finished loading (following any server-side redirect).
-// Waiting must be armed before issuing the navigation, otherwise
-// chrome.tabs.get can report the previous page as already "complete" and
-// we'd read/inject into a page about to be replaced.
-// If `url` is omitted, no navigation is issued — the caller triggers it another
-// way (e.g. an injected form submit) and we just wait for the next load.
+// Navigate the tab to `url` and resolve with its final URL once loading
+// finishes (following any redirect). The listener is armed before navigating so
+// we can't miss the load. If `url` is omitted, no navigation is issued — the
+// caller triggers it another way (e.g. an injected form submit) and we just
+// wait for the next load.
 function navigateAndWait(tabId, url) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -98,17 +97,18 @@ function navigateAndWait(tabId, url) {
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
-    if (url) chrome.tabs.update(tabId, { url, active: true });
+    // Navigate in place WITHOUT activating — the login tab is activated once
+    // when it's first opened; forcing it active on every internal navigation
+    // would yank the user back if they switched tabs mid-login.
+    if (url) chrome.tabs.update(tabId, { url });
   });
 }
 
-// After landing on the CDC menu page, submit the showmenu.htm form for the
-// Placement/Internship menu in the page's MAIN world, then wait for the
-// resulting navigation to finish. Mirrors what the page's own showMenu ->
-// forwardToShowmenu does on click, so it doesn't depend on the async accordion.
+// Submit the showmenu.htm form for the Placement/Internship menu directly,
+// mirroring the page's own showMenu -> forwardToShowmenu so we don't depend on
+// the async-rendered accordion.
 async function openCdcPlacementMenu(tabId) {
-  // Arm the load wait BEFORE submitting so we don't miss the navigation.
-  const done = navigateAndWait(tabId);
+  const done = navigateAndWait(tabId); // arm before submitting
   await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
@@ -145,12 +145,9 @@ async function goToLandingPage(tabId, target) {
   }
 }
 
-// Resolve once the tab lands on the post-login dashboard (/IIT_ERP3/, off the
-// SSO login domain), i.e. the login POST content.js submitted has succeeded.
-// Rejects if content.js reports an error first (via pendingNav.reject) or the
-// login doesn't complete within the timeout. This is how we know login is done
-// WITHOUT racing the in-flight submit — we never navigate the tab until the
-// server has taken it to the dashboard on its own.
+// Resolve once the tab lands on /IIT_ERP3/ (off the SSO login domain), i.e. the
+// login POST succeeded. Rejects on a content.js error (via pendingNav.reject)
+// or timeout.
 function waitForLoggedIn(tabId, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -160,9 +157,8 @@ function waitForLoggedIn(tabId, timeoutMs = 180000) {
     }, timeoutMs);
     const listener = (updatedTabId, info, tab) => {
       if (updatedTabId !== tabId || info.status !== "complete") return;
-      // Match on the path, not the whole href: the login URL carries
-      // "IIT_ERP3" in its requestedUrl query param, so a substring test would
-      // false-positive on the login page itself.
+      // Match on the path, not the href: the login URL carries "IIT_ERP3" in its
+      // requestedUrl query param, so a substring test would false-positive on it.
       let path = "";
       try {
         path = new URL(tab.url || "").pathname;
@@ -188,71 +184,33 @@ function waitForLoggedIn(tabId, timeoutMs = 180000) {
   });
 }
 
-async function getOrCreateLoginTab(preferredWindowId) {
-  const [existing] = await chrome.tabs.query({ url: "https://erp.iitkgp.ac.in/*" });
+// Reuse an existing ERP tab in the clicked window, or open one there. Scoped to
+// the one window (windowId, from the popup) so we never touch other windows and
+// never create a browser window.
+async function getOrCreateLoginTab(windowId) {
+  const [existing] = await chrome.tabs.query({
+    url: "https://erp.iitkgp.ac.in/*",
+    windowId,
+  });
   if (existing) {
-    // Focus the window that already hosts the ERP tab so it doesn't stay
-    // buried behind others.
-    if (existing.windowId != null) {
-      await chrome.windows.update(existing.windowId, { focused: true });
-    }
+    await chrome.tabs.update(existing.id, { active: true });
     return existing.id;
   }
-  // Create the tab in the window the popup was opened from, so it lands in the
-  // window the user is actually looking at (Brave otherwise sometimes spawns or
-  // targets a stray window). Fall back to the last-focused normal window if the
-  // caller didn't supply one (or it's since been closed).
-  let windowId = preferredWindowId;
-  if (windowId != null) {
-    try {
-      // Verify it still exists AND is a normal browser window — never target a
-      // popup/app-type window, which is what produced the stray mini window.
-      const win = await chrome.windows.get(windowId);
-      if (win.type !== "normal") windowId = undefined;
-    } catch (_) {
-      windowId = undefined;
-    }
-  }
-  if (windowId == null) {
-    // No usable window from the caller — pick the most recently focused normal
-    // browser window ourselves rather than letting tabs.create default (which
-    // could still land in a popup-type window).
-    try {
-      const lastFocused = await chrome.windows.getLastFocused();
-      if (lastFocused.type === "normal") {
-        windowId = lastFocused.id;
-      } else {
-        const normals = (await chrome.windows.getAll({ windowTypes: ["normal"] }))
-          .filter((w) => w.type === "normal");
-        windowId = (normals[0] || {}).id;
-      }
-    } catch (_) {
-      windowId = undefined;
-    }
-  }
-  if (windowId == null) {
-    // Genuinely no normal window open: create one explicitly.
-    const win = await chrome.windows.create({ url: "about:blank" });
-    return win.tabs[0].id;
-  }
-  const tab = await chrome.tabs.create({ url: "about:blank", windowId });
+  const tab = await chrome.tabs.create({ url: "about:blank", windowId, active: true });
   return tab.id;
 }
 
 async function runLogin(target = "erp", preferredWindowId) {
-  // Open/focus the ERP login tab, navigate it, then inject content.js. The
-  // content script self-runs and reports back via a "report_status" message —
-  // we do NOT hold one long response channel open for the whole (~minute-long)
-  // flow, since a service worker would let that channel expire mid-login.
+  // content.js is injected below and reports back via a separate "report_status"
+  // message — we don't hold one response channel open for the ~minute-long flow,
+  // which the service worker would let expire mid-login.
   const tabId = await getOrCreateLoginTab(preferredWindowId);
+  activeLoginTabId = tabId;
 
-  // Probe the dashboard URL first: a live session stays there, while a logged-
-  // out request gets bounced to the SSO login page by the server. Hitting the
-  // explicit SSOAdministration/login.htm URL directly (as done below when we
-  // do need to log in) always renders the login form regardless of session
-  // state, so it can't be used for this check. An idle/expired session is
-  // instead bounced to logoutmsg.htm (a notice page, not the login form), so
-  // that must also be treated as logged-out rather than "already logged in".
+  // Probe the dashboard: a live session stays there; a logged-out one is bounced
+  // to the SSO login page (or, if idle/expired, to logoutmsg.htm) — both mean we
+  // must log in. (The login.htm URL always renders the form regardless of
+  // session state, so it can't be used for this check.)
   const probeUrl = await navigateAndWait(tabId, DASHBOARD_URL);
   if (!probeUrl.includes("/SSOAdministration/login") && !probeUrl.includes("/SSOAdministration/logoutmsg")) {
     // Already logged in: go straight to the target's landing page.
@@ -266,26 +224,21 @@ async function runLogin(target = "erp", preferredWindowId) {
   // rather than only when content.js makes its first call.
   getNativePort();
   // Neutralize the blocking window.alert("OTP sent...") the page pops after
-  // getotp. This must run in the page's MAIN world (not the content-script
-  // isolated world) to override the page's own alert, and injecting via
-  // executeScript bypasses the page CSP that blocks an inline <script>.
+  // getotp. Must run in the page's MAIN world to override the page's own alert;
+  // executeScript injection bypasses the CSP that blocks an inline <script>.
   await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
     func: () => {
       window.alert = () => {};
-      window.confirm = () => true;
     },
   });
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
 
-  // content.js fills the form and clicks submit, but does NOT report success —
-  // its submit navigates the tab and tears the script down. We instead wait for
-  // the server to land the tab on the dashboard, which confirms login is truly
-  // complete, and only THEN drive the post-login navigation. This ordering is
-  // what fixes the races: navigating for the landing page / CDC menu while the
-  // login POST was still in flight caused the showmenu.htm 404 (relative action
-  // resolved against /SSOAdministration/) and aborted OTP entry.
+  // content.js submits the login but does NOT report success (its submit tears
+  // the script down). Wait for the server to land the tab on the dashboard
+  // before driving post-login navigation — navigating earlier races the
+  // in-flight POST.
   await waitForLoggedIn(tabId);
   await goToLandingPage(tabId, target);
   setState("success", "");
@@ -325,4 +278,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   sendResponse(state);
+});
+
+// Closing the login tab (or its window) tears down the flow: abort any pending
+// wait, then reset to a clean idle state with a blank toolbar badge so no stale
+// "..."/"OK"/"ERR" indicator lingers — whether the login was still running or
+// had just finished.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId !== activeLoginTabId) return;
+  if (pendingNav && pendingNav.reject) pendingNav.reject(new Error("Login tab was closed"));
+  pendingNav = null;
+  activeLoginTabId = null;
+  state = { status: "idle", message: "", target: null };
+  chrome.action.setBadgeText({ text: "" });
 });

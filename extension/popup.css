@@ -255,7 +255,9 @@ button.running .spinner { display: inline-block; }
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--surface);
-  border: 1.5px solid var(--accent);
+  /* Neutral border in the idle/running state; success/error override below with
+     their own accent so the pill only "lights up" when there's news. */
+  border: 1.5px solid var(--border);
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   white-space: pre-wrap;
   word-break: break-word;
